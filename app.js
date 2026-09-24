@@ -4,7 +4,7 @@ import DOMPurify from 'https://esm.sh/dompurify@3.2.6';
 import UPNG from 'https://esm.sh/upng-js@2.1.0';
 import JSZip from 'https://esm.sh/jszip@3.10.1';
 
-const ldrs = `Ring:ring|Ring 2:ring-2|Tailspin:tailspin|Line Spinner:line-spinner|Squircle:squircle|Square:square|Reuleaux:reuleaux|Tail Chase:tail-chase|Dot Spinner:dot-spinner|Spiral:spiral|Bouncy:bouncy|Treadmill:treadmill|Bouncy Arc:bouncy-arc|Waveform:waveform|Hatch:hatch|Hourglass:hourglass|Zoomies:zoomies|Line Wobble:line-wobble|Infinity:infinity|Trefoil:trefoil|Cardio:cardio|Helix:helix|Grid:grid|Quantum:quantum|Wobble:wobble|Orbit:orbit|Chaotic Orbit:chaotic-orbit|Superballs:superballs|Trio:trio|Momentum:momentum|Dot Wave:dot-wave|Leapfrog:leapfrog|Newton's Cradle:newtons-cradle|Dot Stream:dot-stream|Dot Pulse:dot-pulse|Metronome:metronome|Jelly:jelly|Jelly Triangle:jelly-triangle|Mirage:mirage|Ping:ping|Pulsar:pulsar|Ripples:ripples|Miyagi:miyagi|Pinwheel:pinwheel`.split('|').map((part) => { const [name, slug] = part.split(':'); return { name, slug, type: 'ldrs' }; });
+const ldrs = `Ring:ring|Ring 2:ring-2|Tailspin:tailspin|Line Spinner:line-spinner|Squircle:squircle|Square:square|Reuleaux:reuleaux|Tail Chase:tail-chase|Dot Spinner:dot-spinner|Spiral:spiral|Bouncy:bouncy|Treadmill:treadmill|Bouncy Arc:bouncy-arc|Waveform:waveform|Hatch:hatch|Hourglass:hourglass|Zoomies:zoomies|Line Wobble:line-wobble|Infinity:infinity|Trefoil:trefoil|Cardio:cardio|Helix:helix|Grid:grid|Quantum:quantum|Wobble:wobble|Orbit:orbit|Chaotic Orbit:chaotic-orbit|Superballs:superballs|Trio:trio|Momentum:momentum|Dot Wave:dot-wave|Leapfrog:leapfrog|Newton's Cradle:newtons-cradle|Dot Stream:dot-stream|Dot Pulse:dot-pulse|Metronome:metronome|Jelly:jelly|Jelly Triangle:jelly-triangle|Mirage:mirage|Ping:ping|Pulsar:pulsar|Ripples:ripples|Miyagi:miyagi|Pinwheel:pinwheel`.split('|').map((part) => { const [name, slug] = part.split(':'); return { name, slug, module: slug.replace(/-([a-z0-9])/g, (_, letter) => letter.toUpperCase()), type: 'ldrs' }; });
 const $ = (id) => document.getElementById(id);
 const stage = $('capture-stage'), mount = $('animation-mount'), list = $('asset-list'), exportButton = $('export');
 let source = 'url', assets = [], selected = null, busy = false, loadId = 0, outputUrls = [];
@@ -60,7 +60,7 @@ async function loadAsset(asset, force = false) {
   $('selected-label').textContent = asset.name; exportButton.disabled = true; status(`正在加载 ${asset.name}…`);
   try {
     let element;
-    if (asset.type === 'ldrs') { await import(`https://esm.sh/ldrs@1.1.9/${asset.slug}`); element = document.createElement(`l-${asset.slug}`); }
+    if (asset.type === 'ldrs') { await import(`https://esm.sh/ldrs@1.1.9/${asset.module}`); element = document.createElement(`l-${asset.slug}`); }
     else element = prepareSvg(asset.svg);
     if (token !== loadId) return;
     mount.replaceChildren(element); updateLdrs(); exportButton.disabled = false; status('预览已就绪，可录制导出。');
@@ -237,7 +237,7 @@ async function exportAll() {
       const asset = assets[i]; status(`批量导出 ${i + 1}/${assets.length}：${asset.name}`);
       try {
         let element;
-        if (asset.type === 'ldrs') { await import(`https://esm.sh/ldrs@1.1.9/${asset.slug}`); element = document.createElement(`l-${asset.slug}`); }
+        if (asset.type === 'ldrs') { await import(`https://esm.sh/ldrs@1.1.9/${asset.module}`); element = document.createElement(`l-${asset.slug}`); }
         else element = prepareSvg(asset.svg);
         mount.replaceChildren(element); selected = asset; updateLdrs();
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
