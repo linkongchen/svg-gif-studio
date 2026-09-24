@@ -20,7 +20,7 @@ function renderList() {
     button.type = 'button'; button.className = 'preset-item' + (selected === asset ? ' selected' : '');
     button.textContent = asset.name; button.title = asset.sourceUrl || asset.name;
     button.setAttribute('aria-pressed', String(selected === asset));
-    button.addEventListener('click', () => selectAsset(asset)); list.append(button);
+    button.addEventListener('click', () => loadAsset(asset)); list.append(button);
   }
   if (!list.children.length) { const empty = document.createElement('p'); empty.className = 'preset-empty'; empty.textContent = assets.length ? '没有匹配的动画' : '扫描后将在这里显示 SVG'; list.append(empty); }
   $('asset-count').textContent = assets.length ? `${assets.length} 个` : '';
