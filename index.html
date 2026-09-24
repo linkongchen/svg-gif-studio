@@ -21,7 +21,7 @@
           <div>
             <p class="eyebrow">BROWSER GIF EXPORTER</p>
             <h1>把动画保存为 GIF</h1>
-            <p>扫描网页中的 SVG 动画，或导入自己的 SVG。选择 GIF、无损 APNG，或同时导出。</p>
+            <p>扫描网页中的 SVG 动画，或导入 SVG、HTML/CSS 动画。选择 GIF、无损 APNG，或同时导出。</p>
           </div>
           <div class="local-badge"><span aria-hidden="true">●</span> 本地处理 · 无需上传</div>
         </div>
@@ -31,7 +31,7 @@
             <div class="panel-heading"><h2 id="source-heading">动画来源</h2><span id="asset-count"></span></div>
             <div class="tabs" role="tablist" aria-label="动画来源">
               <button class="tab active" id="url-tab" role="tab" aria-selected="true" aria-controls="url-view" type="button">网页 URL</button>
-              <button class="tab" id="svg-tab" role="tab" aria-selected="false" aria-controls="svg-view" type="button">我的 SVG</button>
+              <button class="tab" id="svg-tab" role="tab" aria-selected="false" aria-controls="svg-view" type="button">我的动画</button>
             </div>
             <div id="url-view" role="tabpanel" aria-labelledby="url-tab">
               <label class="field-label top-label" for="page-url">网页地址</label>
@@ -46,10 +46,10 @@
             <div id="svg-view" role="tabpanel" aria-labelledby="svg-tab" hidden>
               <label class="upload" for="svg-file"><span class="upload-icon" aria-hidden="true">↑</span><strong>选择 SVG 文件</strong><small>仅在本地读取；支持内联 CSS / SMIL 动画</small></label>
               <input id="svg-file" type="file" accept="image/svg+xml,.svg" />
-              <label class="field-label" for="svg-code">或粘贴 SVG 代码</label>
-              <textarea id="svg-code" spellcheck="false" placeholder="&lt;svg xmlns=&quot;http://www.w3.org/2000/svg&quot; ...&gt;..."></textarea>
-              <button id="apply-svg" class="secondary-button" type="button">预览 SVG</button>
-              <p class="hint">请使用自包含 SVG。外部图片、脚本和远程资源会被移除。</p>
+              <label class="field-label" for="svg-code">或粘贴 SVG / HTML + CSS 代码</label>
+              <textarea id="svg-code" spellcheck="false" placeholder="&lt;svg ...&gt;...&lt;/svg&gt; 或 &lt;div class=&quot;container&quot;&gt;...&lt;/div&gt;&lt;style&gt;...&lt;/style&gt;"></textarea>
+              <button id="apply-svg" class="secondary-button" type="button">预览动画</button>
+              <p class="hint">支持自包含动画。外部图片、脚本和远程资源会被移除。</p>
             </div>
           </section>
 
@@ -71,6 +71,7 @@
             <div class="form-grid">
               <label class="setting"><span>动画颜色</span><span class="color-control"><input id="color" type="color" value="#70dcb3" /><output id="color-value">#70DCB3</output></span></label>
               <label class="setting"><span>背景颜色</span><span class="color-control"><input id="background" type="color" value="#101c25" /><output id="background-value">#101C25</output></span></label>
+              <label class="transparent-setting"><input id="transparent" type="checkbox" />透明背景</label>
               <label class="setting"><span>动画大小 <output id="size-value">96 px</output></span><input id="size" type="range" min="30" max="200" value="96" /></label>
               <label class="setting"><span>动画速度 <output id="speed-value">1.5 s</output></span><input id="speed" type="range" min="0.5" max="4" step="0.1" value="1.5" /></label>
               <label class="setting"><span>GIF 尺寸</span><select id="resolution"><option value="128">128 × 128</option><option value="256" selected>256 × 256</option><option value="384">384 × 384</option><option value="512">512 × 512</option></select></label>
@@ -80,12 +81,12 @@
               <label class="setting"><span>GIF 色彩</span><select id="colors"><option value="256" selected>高画质 · 256 色</option><option value="128">平衡 · 128 色</option><option value="64">小文件 · 64 色</option></select></label>
             </div>
             <button id="export" class="export-button" type="button" disabled>录制并导出 <span aria-hidden="true">↗</span></button>
-            <p class="export-note">APNG 保留每帧完整 RGBA 色彩；GIF 最多 256 色，透明像素会与背景合成。批量导出可能需要几分钟。</p>
+            <p class="export-note">APNG 保留完整 RGBA 透明度；GIF 最多 256 色，透明度只有透明或不透明两档。批量导出可能需要几分钟。</p>
           </section>
         </div>
       </main>
       <footer>动画组件来自 <a href="https://github.com/GriffinJohnston/ldrs" target="_blank" rel="noopener noreferrer">LDRS</a> · GIF 录制基于 <a href="https://github.com/zumerlab/snapdom" target="_blank" rel="noopener noreferrer">SnapDOM</a></footer>
     </div>
-    <script type="module" src="./app.js?v=3"></script>
+    <script type="module" src="./app.js?v=4"></script>
   </body>
 </html>

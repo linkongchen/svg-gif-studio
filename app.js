@@ -31,6 +31,18 @@ function updateLdrs() {
   const element = mount.firstElementChild;
   element.setAttribute('size', $('size').value); element.setAttribute('speed', $('speed').value); element.setAttribute('color', $('color').value);
 }
+function updateHtml() {
+  if (selected?.type !== 'html') return;
+  const overrides = mount.firstElementChild?.shadowRoot?.querySelector('.snippet-overrides');
+  if (overrides) overrides.textContent = `*{--uib-size:${$('size').value}px!important;--uib-color:${$('color').value}!important;--uib-speed:${$('speed').value}s!important}`;
+}
+function updateBackground() {
+  const transparent = $('transparent').checked;
+  $('background').disabled = transparent;
+  stage.style.backgroundColor = transparent ? 'transparent' : $('background').value;
+  stage.classList.toggle('transparent-bg', transparent);
+  stage.closest('.preview-surround').classList.toggle('checkerboard', transparent);
+}
 function prepareSvg(text) {
   const opening = text.match(/<svg\b[^>]*>/i)?.[0];
   if (opening && !/\sxmlns\s*=/.test(opening)) text = text.replace(opening, opening.replace(/^<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"'));
@@ -54,6 +66,25 @@ function prepareSvg(text) {
   svg.style.color = $('color').value;
   return document.importNode(svg, true);
 }
+function prepareHtml(text) {
+  const parsed = new DOMParser().parseFromString(text, 'text/html');
+  const css = [...parsed.querySelectorAll('style')].map((style) => style.textContent).join('\n')
+    .replace(/@import\s+[^;]*;?/gi, '').replace(/url\s*\([^)]*\)/gi, 'none');
+  parsed.querySelectorAll('style').forEach((style) => style.remove());
+  const safe = DOMPurify.sanitize(parsed.body.innerHTML, {
+    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'img', 'link', 'form', 'input', 'button', 'video', 'audio', 'canvas'],
+    FORBID_ATTR: ['src', 'srcset', 'href', 'action', 'formaction', 'style'],
+    ALLOW_DATA_ATTR: false
+  });
+  const content = document.createElement('div'); content.innerHTML = safe;
+  if (!content.children.length) throw new Error('没有找到可预览的 HTML 动画元素');
+  const host = document.createElement('div'); host.className = 'html-animation-host';
+  const shadow = host.attachShadow({ mode: 'open' });
+  const style = document.createElement('style'); style.textContent = css;
+  const overrides = document.createElement('style'); overrides.className = 'snippet-overrides';
+  shadow.append(style, overrides, ...content.childNodes);
+  return host;
+}
 async function loadAsset(asset, force = false) {
   if (busy && !force) return;
   const token = ++loadId; selected = asset; clearResults(); renderList();
@@ -61,9 +92,9 @@ async function loadAsset(asset, force = false) {
   try {
     let element;
     if (asset.type === 'ldrs') { await import(`https://esm.sh/ldrs@1.1.9/${asset.module}`); element = document.createElement(`l-${asset.slug}`); }
-    else element = prepareSvg(asset.svg);
+    else element = asset.type === 'html' ? prepareHtml(asset.svg) : prepareSvg(asset.svg);
     if (token !== loadId) return;
-    mount.replaceChildren(element); updateLdrs(); exportButton.disabled = false; status('预览已就绪，可录制导出。');
+    mount.replaceChildren(element); updateLdrs(); updateHtml(); exportButton.disabled = false; status('预览已就绪，可录制导出。');
   } catch (error) { if (token !== loadId) return; mount.replaceChildren(); status(`加载失败：${error.message || '未知错误'}`, true); }
 }
 function setTab(next) {
@@ -71,7 +102,7 @@ function setTab(next) {
   $('url-view').hidden = !urlMode; $('svg-view').hidden = urlMode;
   for (const [name, active] of [['url', urlMode], ['svg', !urlMode]]) { $(`${name}-tab`).classList.toggle('active', active); $(`${name}-tab`).setAttribute('aria-selected', String(active)); }
   if (urlMode && selected && assets.includes(selected)) loadAsset(selected);
-  else { ++loadId; selected = null; mount.replaceChildren(); exportButton.disabled = true; $('selected-label').textContent = urlMode ? '等待选择' : '自定义 SVG'; clearResults(); status(urlMode ? '输入网址并扫描 SVG。' : '请选择 SVG 文件或粘贴 SVG 代码。'); }
+  else { ++loadId; selected = null; mount.replaceChildren(); exportButton.disabled = true; $('selected-label').textContent = urlMode ? '等待选择' : '自定义动画'; clearResults(); status(urlMode ? '输入网址并扫描 SVG。' : '请选择 SVG 文件或粘贴 SVG / HTML + CSS 代码。'); }
   renderList();
 }
 async function fetchText(url) {
@@ -132,7 +163,7 @@ async function scanUrl() {
     $('scan-status').textContent = `扫描失败：${message}`; status('网页扫描失败。', true);
   } finally { $('scan-url').disabled = false; }
 }
-function options() { return { resolution: Number($('resolution').value), fps: Number($('fps').value), duration: Number($('duration').value), background: $('background').value, maxColors: Number($('colors').value), format: $('format').value }; }
+function options() { return { resolution: Number($('resolution').value), fps: Number($('fps').value), duration: Number($('duration').value), background: $('background').value, transparent: $('transparent').checked, maxColors: Number($('colors').value), format: $('format').value }; }
 function animatedValue(target, name) {
   const prop = target[name];
   const value = prop?.animVal;
@@ -170,7 +201,7 @@ async function captureFrames(o) {
   if (hasSmil) {
     offscreen = stage.cloneNode(false);
     offscreen.removeAttribute('id');
-    offscreen.style.cssText = `position:fixed;left:-10000px;top:0;width:256px;height:256px;box-shadow:none;background:${o.background}`;
+    offscreen.style.cssText = `position:fixed;left:-10000px;top:0;width:256px;height:256px;box-shadow:none;background:${o.transparent ? 'transparent' : o.background}`;
     document.body.append(offscreen);
   }
   try {
@@ -181,7 +212,7 @@ async function captureFrames(o) {
       } else {
         offscreen.replaceChildren(freezeSmil(svg, i * delay));
       }
-      const canvas = await snapdom.toCanvas(offscreen || stage, { width: o.resolution, height: o.resolution, dpr: 1, backgroundColor: o.background, invalidate: true });
+      const canvas = await snapdom.toCanvas(offscreen || stage, { width: o.resolution, height: o.resolution, dpr: 1, backgroundColor: o.transparent ? null : o.background, invalidate: true });
       const pixels = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, o.resolution, o.resolution).data;
       frames.push(new Uint8Array(pixels));
     }
@@ -197,9 +228,22 @@ async function produce(o) {
   if (o.format !== 'apng') {
     const gif = GIFEncoder();
     frames.forEach((rgba, index) => {
-      const palette = quantize(rgba, o.maxColors);
-      const pixels = applyPalette(rgba, palette);
-      gif.writeFrame(pixels, o.resolution, o.resolution, { palette, delay, repeat: index === 0 ? 0 : undefined, dispose: 2 });
+      let palette, pixels;
+      if (o.transparent) {
+        const visible = new Uint8Array(rgba.length); let used = 0;
+        for (let i = 0; i < rgba.length; i += 4) if (rgba[i + 3] >= 128) {
+          visible.set(rgba.subarray(i, i + 4), used); used += 4;
+        }
+        const opaquePalette = used ? quantize(visible.subarray(0, used), o.maxColors - 1) : [[0, 0, 0]];
+        palette = [[0, 0, 0], ...opaquePalette]; pixels = new Uint8Array(rgba.length / 4);
+        if (used) {
+          const mapped = applyPalette(visible.subarray(0, used), opaquePalette); let cursor = 0;
+          for (let i = 0; i < rgba.length; i += 4) if (rgba[i + 3] >= 128) pixels[i / 4] = mapped[cursor++] + 1;
+        }
+      } else {
+        palette = quantize(rgba, o.maxColors); pixels = applyPalette(rgba, palette);
+      }
+      gif.writeFrame(pixels, o.resolution, o.resolution, { palette, delay, repeat: index === 0 ? 0 : undefined, dispose: 2, transparent: o.transparent, transparentIndex: 0 });
     });
     gif.finish();
     files.push({ extension: 'gif', blob: new Blob([gif.bytes()], { type: 'image/gif' }) });
@@ -258,7 +302,11 @@ $('search').addEventListener('input', renderList);
 $('scan-url').addEventListener('click', scanUrl);
 $('page-url').addEventListener('keydown', (event) => { if (event.key === 'Enter') scanUrl(); });
 $('batch-export').addEventListener('click', exportAll);
-$('apply-svg').addEventListener('click', () => loadAsset({ name: '自定义 SVG', type: 'svg', svg: $('svg-code').value }));
+$('apply-svg').addEventListener('click', () => {
+  const code = $('svg-code').value.trim();
+  const isSvg = /^(?:<\?xml[^>]*>\s*)?<svg\b/i.test(code);
+  loadAsset({ name: isSvg ? '自定义 SVG' : 'HTML/CSS 动画', type: isSvg ? 'svg' : 'html', svg: code });
+});
 $('svg-file').addEventListener('change', async (event) => {
   const file = event.target.files?.[0]; if (!file) return;
   if (file.size > 2_000_000) { status('SVG 文件请小于 2 MB。', true); return; }
@@ -270,8 +318,9 @@ for (const id of ['color', 'background', 'size', 'speed']) $(id).addEventListene
   if (id === 'speed') $('speed-value').textContent = `${$('speed').value} s`;
   stage.style.backgroundColor = $('background').value;
   if (selected?.type === 'svg' && mount.firstElementChild) { mount.firstElementChild.style.width = `${$('size').value}px`; mount.firstElementChild.style.height = `${$('size').value}px`; mount.firstElementChild.style.color = $('color').value; }
-  updateLdrs(); clearResults();
+  updateLdrs(); updateHtml(); updateBackground(); clearResults();
 });
+$('transparent').addEventListener('change', () => { updateBackground(); clearResults(); });
 for (const id of ['resolution', 'fps', 'duration', 'format', 'colors']) $(id).addEventListener('change', clearResults);
 exportButton.addEventListener('click', exportOne);
-renderList(); status('输入网址并扫描 SVG。');
+updateBackground(); renderList(); status('输入网址并扫描 SVG。');
