@@ -3,6 +3,7 @@ import { GIFEncoder, quantize, applyPalette } from 'https://cdn.jsdelivr.net/npm
 import DOMPurify from 'https://esm.sh/dompurify@3.2.6';
 import UPNG from 'https://esm.sh/upng-js@2.1.0';
 import JSZip from 'https://esm.sh/jszip@3.10.1';
+import { encodeAnimatedWebp } from './webp.mjs';
 
 const ldrs = `Ring:ring|Ring 2:ring-2|Tailspin:tailspin|Line Spinner:line-spinner|Squircle:squircle|Square:square|Reuleaux:reuleaux|Tail Chase:tail-chase|Dot Spinner:dot-spinner|Spiral:spiral|Bouncy:bouncy|Treadmill:treadmill|Bouncy Arc:bouncy-arc|Waveform:waveform|Hatch:hatch|Hourglass:hourglass|Zoomies:zoomies|Line Wobble:line-wobble|Infinity:infinity|Trefoil:trefoil|Cardio:cardio|Helix:helix|Grid:grid|Quantum:quantum|Wobble:wobble|Orbit:orbit|Chaotic Orbit:chaotic-orbit|Superballs:superballs|Trio:trio|Momentum:momentum|Dot Wave:dot-wave|Leapfrog:leapfrog|Newton's Cradle:newtons-cradle|Dot Stream:dot-stream|Dot Pulse:dot-pulse|Metronome:metronome|Jelly:jelly|Jelly Triangle:jelly-triangle|Mirage:mirage|Ping:ping|Pulsar:pulsar|Ripples:ripples|Miyagi:miyagi|Pinwheel:pinwheel`.split('|').map((part) => { const [name, slug] = part.split(':'); return { name, slug, module: slug.replace(/-([a-z0-9])/g, (_, letter) => letter.toUpperCase()), type: 'ldrs' }; });
 const $ = (id) => document.getElementById(id);
@@ -48,11 +49,11 @@ function prepareSvg(text) {
   if (opening && !/\sxmlns\s*=/.test(opening)) text = text.replace(opening, opening.replace(/^<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"'));
   const parsed = new DOMParser().parseFromString(text, 'image/svg+xml');
   if (parsed.querySelector('parsererror') || parsed.documentElement.localName !== 'svg') throw new Error('SVG 格式不正确');
-  const cleaned = DOMPurify.sanitize(text, { USE_PROFILES: { svg: true, svgFilters: true }, ADD_TAGS: ['style', 'animate', 'animateTransform', 'animateMotion', 'set', 'mpath'], FORBID_TAGS: ['script', 'foreignObject', 'image', 'iframe', 'a'] });
+  const cleaned = DOMPurify.sanitize(text, { USE_PROFILES: { svg: true, svgFilters: true }, ADD_TAGS: ['style', 'animate', 'animateTransform', 'animateMotion', 'set', 'mpath'], ADD_ATTR: ['from', 'to', 'by', 'values', 'keyTimes', 'keySplines', 'calcMode', 'additive', 'accumulate', 'begin', 'end'], FORBID_TAGS: ['script', 'foreignObject', 'image', 'iframe', 'a'] });
   const svg = new DOMParser().parseFromString(cleaned, 'image/svg+xml').documentElement;
   if (svg.localName !== 'svg') throw new Error('SVG 内容无法安全预览');
   for (const node of svg.querySelectorAll('*')) {
-    if (['animate', 'animateTransform', 'animateMotion', 'set'].includes(node.localName) && /^(href|xlink:href|style|src)$/i.test(node.getAttribute('attributeName') || '')) { node.remove(); continue; }
+    if (['animate', 'animateTransform', 'animateMotion', 'set'].includes(node.localName) && /^(?:on|href$|xlink:href$|style$|src$)/i.test(node.getAttribute('attributeName') || '')) { node.remove(); continue; }
     for (const attr of [...node.attributes]) {
       if (/^(href|xlink:href)$/i.test(attr.name) && attr.value && !attr.value.startsWith('#')) node.removeAttribute(attr.name);
       else if (/url\s*\(/i.test(attr.value) && !/^url\s*\(\s*['"]?#[^)]+\)/i.test(attr.value)) node.removeAttribute(attr.name);
@@ -163,7 +164,14 @@ async function scanUrl() {
     $('scan-status').textContent = `扫描失败：${message}`; status('网页扫描失败。', true);
   } finally { $('scan-url').disabled = false; }
 }
-function options() { return { resolution: Number($('resolution').value), fps: Number($('fps').value), duration: Number($('duration').value), background: $('background').value, transparent: $('transparent').checked, maxColors: Number($('colors').value), format: $('format').value }; }
+function options() {
+  const raw = $('duration').value === 'custom' ? $('custom-duration').value.trim() : $('duration').value;
+  const duration = Number(raw);
+  if (!raw || !Number.isInteger(duration) || duration < 100 || duration > 20000) throw new Error('录制时长请输入 100～20000 之间的整数毫秒');
+  const fps = Number($('fps').value), resolution = Number($('resolution').value);
+  if (Math.max(2, Math.ceil(duration * fps / 1000)) > 240) throw new Error('帧数超过 240；请缩短时长或降低帧率');
+  return { resolution, fps, duration, background: $('background').value, transparent: $('transparent').checked, maxColors: Number($('colors').value), format: $('format').value };
+}
 function animatedValue(target, name) {
   const prop = target[name];
   const value = prop?.animVal;
@@ -193,7 +201,9 @@ function freezeSmil(svg, timeMs) {
   return clone;
 }
 async function captureFrames(o) {
-  const delay = Math.round(1000 / o.fps), count = Math.max(2, Math.round(o.duration / delay));
+  const count = Math.max(2, Math.ceil(o.duration * o.fps / 1000));
+  const boundaries = Array.from({ length: count + 1 }, (_, i) => Math.round(i * o.duration / count));
+  const delays = boundaries.slice(1).map((end, i) => end - boundaries[i]);
   const frames = [], start = performance.now();
   const svg = selected?.type === 'svg' ? mount.querySelector('svg') : null;
   const hasSmil = !!svg?.querySelector('animate, animateTransform, animateMotion, set');
@@ -207,10 +217,10 @@ async function captureFrames(o) {
   try {
     for (let i = 0; i < count; i++) {
       if (!hasSmil) {
-        const wait = start + i * delay - performance.now();
+        const wait = start + boundaries[i] - performance.now();
         if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
       } else {
-        offscreen.replaceChildren(freezeSmil(svg, i * delay));
+        offscreen.replaceChildren(freezeSmil(svg, boundaries[i]));
       }
       const canvas = await snapdom.toCanvas(offscreen || stage, { width: o.resolution, height: o.resolution, dpr: 1, backgroundColor: o.transparent ? null : o.background, invalidate: true });
       const pixels = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, o.resolution, o.resolution).data;
@@ -220,12 +230,13 @@ async function captureFrames(o) {
     offscreen?.remove();
     if (hasSmil) svg.unpauseAnimations();
   }
-  return { frames, delay };
+  return { frames, delays };
 }
 async function produce(o) {
-  const { frames, delay } = await captureFrames(o);
+  const { frames, delays } = await captureFrames(o);
   const files = [];
-  if (o.format !== 'apng') {
+  if (['gif', 'both', 'all'].includes(o.format)) {
+    const gifTotalCentiseconds = Math.round(o.duration / 10);
     const gif = GIFEncoder();
     frames.forEach((rgba, index) => {
       let palette, pixels;
@@ -243,12 +254,14 @@ async function produce(o) {
       } else {
         palette = quantize(rgba, o.maxColors); pixels = applyPalette(rgba, palette);
       }
+      const delay = 10 * (Math.round((index + 1) * gifTotalCentiseconds / frames.length) - Math.round(index * gifTotalCentiseconds / frames.length));
       gif.writeFrame(pixels, o.resolution, o.resolution, { palette, delay, repeat: index === 0 ? 0 : undefined, dispose: 2, transparent: o.transparent, transparentIndex: 0 });
     });
     gif.finish();
     files.push({ extension: 'gif', blob: new Blob([gif.bytes()], { type: 'image/gif' }) });
   }
-  if (o.format !== 'gif') files.push({ extension: 'png', blob: new Blob([UPNG.encode(frames.map((frame) => frame.buffer), o.resolution, o.resolution, 0, Array(frames.length).fill(delay))], { type: 'image/png' }) });
+  if (['apng', 'both', 'all'].includes(o.format)) files.push({ extension: 'png', blob: new Blob([UPNG.encode(frames.map((frame) => frame.buffer), o.resolution, o.resolution, 0, delays)], { type: 'image/png' }) });
+  if (['webp', 'all'].includes(o.format)) files.push({ extension: 'webp', blob: await encodeAnimatedWebp(frames, delays, o.resolution, o.resolution, o.transparent, o.background) });
   for (const file of files) if (file.blob.size < 100) throw new Error(`${file.extension.toUpperCase()} 文件为空`);
   return files;
 }
@@ -258,7 +271,7 @@ function showFiles(files, name) {
     const url = URL.createObjectURL(file.blob); outputUrls.push(url);
     const link = document.createElement('a'); link.className = 'download-link'; link.href = url;
     link.download = `${safeName(name)}-${$('resolution').value}px.${file.extension}`;
-    link.textContent = file.extension === 'gif' ? '下载 GIF ↓' : file.extension === 'png' ? '下载无损 APNG ↓' : '下载 ZIP ↓';
+    link.textContent = { gif: '下载 GIF ↓', png: '下载无损 APNG ↓', webp: '下载 WebP ↓', zip: '下载 ZIP ↓' }[file.extension];
     $('result-links').append(link);
   }
   if (files[0].extension === 'zip') $('result-preview').hidden = true;
@@ -267,15 +280,19 @@ function showFiles(files, name) {
 }
 async function exportOne() {
   if (busy || !mount.firstElementChild) return;
+  let o;
+  try { o = options(); } catch (error) { status(error.message, true); return; }
   busy = true; exportButton.disabled = true; $('batch-export').disabled = true; exportButton.textContent = '正在录制…'; clearResults(); status('正在录制并编码，请保持页面打开…');
-  try { const files = await produce(options()); showFiles(files, selected?.name); status(`完成：${files.map((file) => `${file.extension.toUpperCase()} ${Math.round(file.blob.size / 1024)} KB`).join(' · ')}`); }
+  try { const files = await produce(o); showFiles(files, selected?.name); status(`完成：${files.map((file) => `${file.extension.toUpperCase()} ${Math.round(file.blob.size / 1024)} KB`).join(' · ')}`); }
   catch (error) { console.error(error); status(`导出失败：${error.message || '请降低分辨率和帧率后重试'}`, true); }
   finally { busy = false; exportButton.disabled = !mount.firstElementChild; exportButton.innerHTML = '录制并导出 <span aria-hidden="true">↗</span>'; renderList(); }
 }
 async function exportAll() {
   if (busy || !assets.length) return;
+  let o;
+  try { o = options(); } catch (error) { status(error.message, true); return; }
   busy = true; exportButton.disabled = true; $('scan-url').disabled = true; $('batch-export').disabled = true; clearResults();
-  const zip = new JSZip(), o = options(); let succeeded = 0;
+  const zip = new JSZip(); let succeeded = 0;
   try {
     for (let i = 0; i < assets.length; i++) {
       const asset = assets[i]; status(`批量导出 ${i + 1}/${assets.length}：${asset.name}`);
@@ -322,5 +339,7 @@ for (const id of ['color', 'background', 'size', 'speed']) $(id).addEventListene
 });
 $('transparent').addEventListener('change', () => { updateBackground(); clearResults(); });
 for (const id of ['resolution', 'fps', 'duration', 'format', 'colors']) $(id).addEventListener('change', clearResults);
+$('duration').addEventListener('change', () => { $('custom-duration-setting').hidden = $('duration').value !== 'custom'; if ($('duration').value === 'custom') $('custom-duration').focus(); });
+$('custom-duration').addEventListener('input', clearResults);
 exportButton.addEventListener('click', exportOne);
 updateBackground(); renderList(); status('输入网址并扫描 SVG。');
